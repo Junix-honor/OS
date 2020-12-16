@@ -28,12 +28,12 @@ private:
     friend class PRM;
 
     string PID;
-    map<string, Resource> Other_resources;
+    map<string, Resource> OtherResources;
     //Status: Type
     string Type;
     //block
     RCB *BlockList;
-    int req_num;
+    int BlcokWait;
 
     int Priority;
     //Creation_tree
@@ -55,17 +55,17 @@ public:
 
     void setRunning();
 
-    void insertResource(RCB *rcb, int num);
+    int insertResource(RCB *rcb, int num);
 
     int releaseResource(RCB *rcb, int num);
 
-    void setBlock(RCB *res, int req);
+    void blockProcess(RCB *res, int req);
 
     string getPID();
 
     int getPriority();
 
-    int getReqnum();
+    int getBlockWait();
 };
 
 #endif //OS_PCB_H

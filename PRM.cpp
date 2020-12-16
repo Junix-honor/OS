@@ -6,79 +6,134 @@
 
 using namespace std;
 
+//初始化
 PRM::PRM(int resource, int priority) : ResourceNum(resource), PriorityNum(priority) {
     //资源初始化
     for (int i = 1; i <= ResourceNum; i++) {
         ostringstream rid;
         rid << "R" << i;
+        //创建资源Ri
         RCB *R = new RCB(rid.str(), i, i);
+        //资源Ri初始化为i个
         Resources.insert(pair<string, RCB *>(rid.str(), R));
     }
+    //初始化就绪队列
     RL.resize(PriorityNum);
-    //初始进程
-    Running_Process = new PCB("init", nullptr, 0);
-    Running_Process->setRunning();
-    Processes.insert(pair<string, PCB *>("init", Running_Process));
-    RL[0].push_back(Running_Process);
+    //初始进程init，作为当前运行进程
+    RunningProcess = new PCB("init", nullptr, 0);
+    //将初始化进程设置为running状态
+    RunningProcess->setRunning();
+    //将init进程添加到进程管理器的进程集中
+    Processes.insert(pair<string, PCB *>("init", RunningProcess));
+    //插入到相应优先级就绪队列的尾部
+    RL[0].push_back(RunningProcess);
     cout << "Init process is running" << endl;
 }
 
 PRM::~PRM() = default;
 
+//创建进程
 int PRM::create(string id, int priority) {
-    PCB *Process = new PCB(id, Running_Process, priority);
-    RL[priority].push_back(Process);
-    Running_Process->insertChild(Process);
-    Running_Process->setReady();
-    Processes.insert(pair<string, PCB *>(id, Process));
-    scheduler();
-    return true;
-}
-
-int PRM::destroy(string id) {
+    //判断是否存在PID为id的进程
     auto iter = Processes.find(id);
-    if (iter == Processes.end())
-        return -1; //没有这个进程
-    PCB *process = iter->second;
-    PCB *parent = process->Parent;
-    if (parent != nullptr)
-        parent->Children.remove(process);
-    killTree(process);
+    if (iter != Processes.end()) {
+        //进程已经存在
+        cout << "Process " << id << " already exists." << endl;
+        //返回错误
+        return -1;
+    }
+    //创建新进程：进程ID、父进程、优先级
+    PCB *Process = new PCB(id, RunningProcess, priority);
+    //插入到相应优先级就绪队列的尾部
+    RL[priority].push_back(Process);
+    //为当前运行进程添加子进程，即新进程
+    RunningProcess->insertChild(Process);
+    //将新进程添加到进程管理器的进程集中
+    Processes.insert(pair<string, PCB *>(id, Process));
+    if (RunningProcess->Priority < priority) {
+        //将当前进程设置为就绪状态
+        RunningProcess->setReady();
+        //将当前进程从相应优先级就绪队列的对头移到队尾
+        RL[RunningProcess->Priority].push_back(RunningProcess);
+        RL[RunningProcess->Priority].pop_front();
+    }
+    //进程调度
     scheduler();
+    //返回成功
     return true;
 }
 
+//撤销进程
+int PRM::destroy(string id) {
+    //判断是否存在PID为id的进程
+    auto iter = Processes.find(id);
+    if (iter == Processes.end()) {
+        //进程不存在
+        cout << "Process " << id << " does not exist." << endl;
+        //返回错误
+        return -1;
+    }
+    //撤销的进程
+    PCB *process = iter->second;
+    //撤销进程的父进程
+    PCB *parent = process->Parent;
+    //如果父进程非空
+    if (parent != nullptr)
+        //把撤销的进程从父进程中的子进程列表中删除
+        parent->Children.remove(process);
+    //递归撤销进程
+    killTree(process);
+    //进程调度
+    scheduler();
+    //返回成功
+    return true;
+}
+
+//递归撤销进程
 int PRM::killTree(PCB *p) {
-    //枚举所有子孙进程
+    //枚举所有子进程
     for (auto iter = p->Children.begin(); iter != p->Children.end(); ++iter)
+        //递归撤销子进程
         killTree(*iter);
 
-    //释放资源
-    for (auto iter = p->Other_resources.begin(); iter != p->Other_resources.end(); ++iter) {
+    //枚举待撤销进程p占用的所有资源
+    for (auto iter = p->OtherResources.begin(); iter != p->OtherResources.end(); ++iter) {
+        //释放占用的资源R
         Resource res = iter->second;
         RCB *R = res.rcb;
         R->Available += res.used;
         cout << "Release " << R->RID << ".";
+        //唤醒因等待资源R阻塞的进程
         while (!R->WaitingList.empty() && R->WaitingList.front() != p &&
-               R->Available >= R->WaitingList.front()->getReqnum()) {
+               R->Available >= R->WaitingList.front()->getBlockWait()) {
+            //唤醒的进程process
             PCB *process = R->WaitingList.front();
-
-            R->Available -= process->getReqnum();
+            //从资源R的等待链表中删除
             R->removeProcess(process);
+            //唤醒的进程process占用资源R
+            R->Available -= process->getBlockWait();
+            process->insertResource(R, process->getBlockWait());
+            //唤醒的进程process设置为就绪态
             process->setReady();
-            process->insertResource(R, process->getReqnum());
+            //唤醒的进程process插入到相应优先级就绪队列的尾部
             RL[process->Priority].push_back(process);
             cout << "Wake up process " << process->PID << ".";
         }
     }
     //删除PCB和指向这个PCB是所有指针
-    Processes.erase(p->PID); //进程map中删除
-    RL[p->Priority].remove(p); //Ready List中删除
-    delete p;
+    Processes.erase(p->PID); //管理器进程集中删除
+    RL[p->Priority].remove(p); //相应优先级就绪队列中删除
+    if (p->Type == "blocked")
+        p->BlockList->WaitingList.remove(p);//资源等待队列中删除
+    delete p;//删除进程
+
+    //返回成功
     return true;
 }
 
+//调度
 int PRM::scheduler() {
+    //找到最高优先级
     int highestPriority = -1;
     for (int i = PriorityNum - 1; i >= 0; i--) {
         if (!RL[i].empty()) {
@@ -86,65 +141,126 @@ int PRM::scheduler() {
             break;
         }
     }
+
+    //系统出错退出
     if (highestPriority == -1)
-        return -1;
+        exit(0);
+
+    //如果最高优先级的进程没有在运行而且非空
     if (RL[highestPriority].front()->Type != "running"
         && (RL[highestPriority].front() != nullptr)) {
-        Running_Process = RL[highestPriority].front();
-        Running_Process->setRunning();
+        //调度最高优先级的进程
+        RunningProcess = RL[highestPriority].front();
+        RunningProcess->setRunning();
     }
-    cout << "Process " << Running_Process->PID << " is running." << endl;
+    cout << "Process " << RunningProcess->PID << " is running." << endl;
     return true;
 }
 
+//时间中断
 int PRM::timeout() {
-    Running_Process->setReady();
-    RL[Running_Process->Priority].push_back(Running_Process);
-    RL[Running_Process->Priority].pop_front();
-    cout << "Process " << Running_Process->PID << " is ready.";
+    //讲当前进程置为就绪态
+    RunningProcess->setReady();
+    //将当前进程从相应优先级就绪队列的对头移到队尾
+    RL[RunningProcess->Priority].push_back(RunningProcess);
+    RL[RunningProcess->Priority].pop_front();
+    cout << "Process " << RunningProcess->PID << " is ready.";
+    //调度进程
     scheduler();
     return true;
 }
 
+//请求资源
 int PRM::request(string rid, int n) {
+    //判断资源是否存在
     auto iter = Resources.find(rid);
-    if (iter == Resources.end())
-        return false;
+    if (iter == Resources.end()) {
+        //资源不存在
+        cout << "Resource " << rid << " does not exit." << endl;
+        //返回错误
+        return -1;
+    }
+
+    //请求的资源
     RCB *R = iter->second;
-    if (n > R->Initial)
-        return false;
+    if (n > R->Initial) {
+        //请求的资源数大于最大资源数
+        cout << "The maximum number of resources " << rid << " is " << R->Initial << "." << endl;
+        //返回错误
+        return -2;
+    }
+    //如果可用的资源数足够分配
     if (R->Available >= n) {
-        Running_Process->insertResource(R, n);
+        //当前进程占用资源n个资源R
+        RunningProcess->insertResource(R, n);
         R->Available -= n;
-        cout << "Process " << Running_Process->PID << " request " << n << " " << rid << endl;
-    } else {
-        RL[Running_Process->Priority].remove(Running_Process);
-        Running_Process->setBlock(R, n);
-        R->insertProcess(Running_Process);
-        cout << "Process " << Running_Process->PID << " is blocked.";
+        cout << "Process " << RunningProcess->PID << " request " << n << " " << rid << endl;
+    }
+        //如果可用的资源数不足够分配
+    else {
+        //阻塞当前进程
+        RunningProcess->blockProcess(R, n);
+        //当前进程从相应优先级就绪队列中删除
+        RL[RunningProcess->Priority].remove(RunningProcess);
+        //将当前进程添加到资源R的等待链表中
+        R->insertProcess(RunningProcess);
+        cout << "Process " << RunningProcess->PID << " is blocked.";
+        //调度进程
         scheduler();
     }
     return true;
 }
 
+//释放资源
 int PRM::release(string rid, int n) {
+    //判断资源是否存在
     auto iter = Resources.find(rid);
-    if (iter == Resources.end())
-        return -1; //没有这个资源
+    if (iter == Resources.end()) {
+        //资源不存在
+        cout << "Resource " << rid << " does not exit." << endl;
+        //返回错误
+        return -1;
+    }
+    //判断资源是否被当前进程占用
+    auto it = RunningProcess->OtherResources.find(rid);
+    if (it == RunningProcess->OtherResources.end()) {
+        //当前进程不存在该资源
+        cout << "Resource " << rid << " does not exist in the current process." << endl;
+        //返回错误
+        return -2;
+    }
 
+    //释放的资源
     RCB *R = iter->second;
-    Running_Process->releaseResource(R, n);
+    if (n > it->second.used) {
+        //释放的资源数大于占用的资源数
+        cout << "The number of resources " << rid << " occupied by the current process is "
+             << it->second.used << "." << endl;
+        //返回错误
+        return -3;
+    }
+
+    //当前运行的进程释放n个资源R
+    RunningProcess->releaseResource(R, n);
     R->Available += n;
 
-    while (!R->WaitingList.empty() && R->Available >= R->WaitingList.front()->getReqnum()) {
+    //唤醒因等待资源R阻塞的进程
+    while (!R->WaitingList.empty() && R->Available >= R->WaitingList.front()->getBlockWait()) {
+        //唤醒的进程process
         PCB *process = R->WaitingList.front();
-        R->Available -= process->getReqnum();
+        //从资源R的等待链表中删除
         R->removeProcess(process);
+        //唤醒的进程process占用资源R
+        R->Available -= process->getBlockWait();
+        process->insertResource(R, process->getBlockWait());
+        //唤醒的进程process设置为就绪态
         process->setReady();
-        process->insertResource(R, process->getReqnum());
+        //唤醒的进程process插入到相应优先级就绪队列的尾部
         RL[process->Priority].push_back(process);
     }
+    //进程调度
     scheduler();
+    //返回成功
     return true;
 }
 
@@ -208,7 +324,7 @@ int PRM::printPCB(string pid) {
     cout << "Status : " << process->Type << endl;
 
     if (process->Type == "blocked")
-        cout << "BlcokList : " << process->BlockList->RID << " " << "wait " << process->req_num << endl;
+        cout << "BlcokList : " << process->BlockList->RID << " " << "wait " << process->BlcokWait << endl;
     cout << "Priority : " << process->Priority << endl;
 
     if (process->Parent == nullptr)
@@ -222,7 +338,7 @@ int PRM::printPCB(string pid) {
     cout << endl;
 
     cout << "Resource : ";
-    for (auto iter = process->Other_resources.begin(); iter != process->Other_resources.end(); iter++)
+    for (auto iter = process->OtherResources.begin(); iter != process->OtherResources.end(); iter++)
         cout << iter->first << "-" << iter->second.used << " ";
     cout << endl;
 

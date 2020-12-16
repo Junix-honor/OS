@@ -1,6 +1,7 @@
 #include<cstdio>
 #include<iostream>
 #include<string>
+#include <fstream>
 #include"PRM.h"
 
 void SplitString(const string &s, vector<string> &v, const string &c) {
@@ -18,33 +19,48 @@ void SplitString(const string &s, vector<string> &v, const string &c) {
 }
 
 int main() {
-    int ResourceNum;
-    int PriorityNum;
+    int ResourceNum;//资源数
+    int PriorityNum;//优先级数
+//    ifstream file("1.txt");
+    //init命令，初始化
     while (true) {
         string shell;
         getline(cin, shell);
+//        getline(file, shell);
         vector<string> shellList;
         SplitString(shell, shellList, " ");
         string cmd = shellList[0];
         if (cmd == "init") {
-            if (shellList.size() != 3) {
+            if (shellList.size() == 1) {
+                //默认资源数为4，优先级为3
+                ResourceNum = 4;
+                PriorityNum = 3;
+                break;
+            } else if (shellList.size() == 3) {
+                //用户确定资源数和优先级数
+                stringstream stream;
+                int num;
+                stream << shellList[1] << " " << shellList[2];
+                stream >> ResourceNum >> PriorityNum;
+                break;
+            } else {
                 cout << "parameter error" << endl;
                 continue;
             }
-            stringstream stream;
-            int num;
-            stream << shellList[1] << " " << shellList[2];
-            stream >> ResourceNum >> PriorityNum;
-            break;
         }
     }
+    //实例化进程与资源管理器
     PRM manager(ResourceNum, PriorityNum);
+
+    //不断获取用户终端输入
     while (true) {
         string shell;
         getline(cin, shell);
+//        getline(file, shell);
         vector<string> shellList;
         SplitString(shell, shellList, " ");
         string cmd = shellList[0];
+        //翻译终端各种命令，并调用进程与资源管理器相关接口
         if (cmd == "cr") {
             if (shellList.size() != 3) {
                 cout << "parameter error" << endl;
@@ -109,9 +125,10 @@ int main() {
             }
             manager.printPCB(shellList[1]);
         } else if (cmd == "exit") {
-            exit(0);
+            break;
         } else
             cout << "command error" << endl;
     }
+//    file.close();
     return 0;
 }

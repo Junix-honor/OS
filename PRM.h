@@ -20,9 +20,9 @@ private:
     map<string, RCB *> Resources;
     map<string, PCB *> Processes;
     vector<list<PCB *> > RL;
-    PCB *Running_Process;
+    PCB *RunningProcess;
 public:
-    PRM(int resource, int priority);
+    PRM(int resource, int priority=3);
 
     ~PRM();
 
