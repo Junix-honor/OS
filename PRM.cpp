@@ -161,10 +161,21 @@ int PRM::scheduler() {
 int PRM::timeout() {
     //讲当前进程置为就绪态
     RunningProcess->setReady();
-    //将当前进程从相应优先级就绪队列的对头移到队尾
+
+    //不考虑降级：将当前进程从相应优先级就绪队列的对头移到队尾
     RL[RunningProcess->Priority].push_back(RunningProcess);
     RL[RunningProcess->Priority].pop_front();
     cout << "Process " << RunningProcess->PID << " is ready.";
+
+//    //考虑降级
+//    int priority = RunningProcess->Priority;
+//    int degrade = (priority > 1) ? priority - 1 : priority;
+//    //降级
+//    RunningProcess->Priority = degrade;
+//    RL[degrade].push_back(RunningProcess);
+//    RL[priority].pop_front();
+//    cout << "Process " << RunningProcess->PID << " is ready.";
+
     //调度进程
     scheduler();
     return true;
