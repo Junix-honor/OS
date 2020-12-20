@@ -50,6 +50,8 @@ int PRM::create(string id, int priority) {
     RunningProcess->insertChild(Process);
     //将新进程添加到进程管理器的进程集中
     Processes.insert(pair<string, PCB *>(id, Process));
+
+    //如果新进程的优先级比当前进程优先级高
     if (RunningProcess->Priority < priority) {
         //将当前进程设置为就绪状态
         RunningProcess->setReady();
